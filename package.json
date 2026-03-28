@@ -1,0 +1,30 @@
+{
+  "name": "ootd",
+  "version": "0.0.0",
+  "description": "TypeScript client for OpenText Documentum Rest Services",
+  "keywords": [
+    "OpenText",
+    "Documentum"
+  ],
+  "homepage": "https://github.com/backbridge/ootd#readme",
+  "bugs": {
+    "url": "https://github.com/backbridge/ootd/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/backbridge/ootd.git"
+  },
+  "license": "MIT",
+  "author": "LoneRifle <LoneRifle@users.noreply.github.com>",
+  "type": "module",
+  "main": "index.ts",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "optionalDependencies": {
+    "axios": "^1.14.0"
+  }
+}
