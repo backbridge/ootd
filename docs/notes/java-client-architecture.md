@@ -48,13 +48,20 @@ All HTTP mechanics live here. It wraps Spring's `RestTemplate` and manages:
 - Basic authentication header construction
 - CSRF client-token lifecycle (introduced in REST Services v7.2)
 - `If-Match` / `If-None-Match` optimistic concurrency headers
-- SSL / certificate handling (trust-all mode for dev)
+- SSL / certificate handling (trust-all mode for dev, self-signed certificates, hostname verification)
 - Streaming mode for large binary uploads
 - Multipart POST construction (metadata + binary content parts)
 - Distributed content upload to ACS/BOCS
 - Archived content download
+- State management: tracks `HttpStatus` and `HttpHeaders` of the last executed operation
 
 The abstract class implements `DCTMRestClient` but declares abstract helper methods that the two concrete subclasses override to plug in their respective serialisers.
+
+The central orchestrator is the `sendRequest` method, which manages:
+- URI preparation and resolution
+- Header injection (auth, CSRF, ETag)
+- Request entity construction
+- Error handling and exception translation
 
 ### `DCTMJaxbClient` and `DCTMJacksonClient` (concrete)
 
@@ -66,6 +73,15 @@ Each class pairs a serialisation library with the abstract HTTP machinery:
 | `DCTMJacksonClient` | JSON | Jackson (`ObjectMapper`) |
 
 They configure the `RestTemplate` message converters and error handlers appropriate to their format. All request/response bodies go through the respective marshaller transparently.
+
+**DCTMJaxbClient** uses:
+- `DCTMJaxbContext` to manage JAXB model wrappers and handle polymorphic content unmarshalling within entries
+- `DCTMJaxbErrorHandler` to translate XML error responses into `DCTMRestErrorException`
+
+**DCTMJacksonClient** handles:
+- Version-specific metadata differences (e.g., `JsonType` for Documentum 7.0 vs `JsonType71` for 7.1+)
+- `@JsonIgnoreProperties(ignoreUnknown = true)` for compatibility across Documentum REST versions
+- Specialized feed deserialization through custom helpers
 
 ### `DCTMRestClientBinding` (enum)
 
@@ -104,22 +120,58 @@ This is a secondary concern of the client; the primary intended use is synchrono
 
 ## Model Layer
 
-The model is structured around an inheritance tree of **interfaces** and **abstract classes**, with two parallel concrete hierarchies (JAXB/XML and Jackson/JSON plus a "plain" hierarchy used for constructing request bodies):
+The model is structured around an inheritance tree of **interfaces** with **parallel concrete hierarchies** for JAXB/XML and Jackson/JSON, plus a "plain" hierarchy used for constructing request bodies.
+
+### Core Interfaces
+
+- **`Linkable`** — base interface for any resource that contains hypermedia links
+- **`InlineLinkable`** — extends `Linkable` with inline-ability support
+- **`Inlineable`** — defines behavior for resources that can be embedded directly within an `Entry` or referenced via a `src` attribute
+- **`RestObject`** — represents a Documentum object (like `dm_document` or `dm_folder`), providing access to properties map, `object_name`, `r_object_id`, type information, etc.
+- **`Feed<T>`** and **`Entry<T>`** — represent Atom-style collections
+
+### Parallel Implementation Hierarchies
 
 ```
-Linkable (interface) — has links[]
-  └── LinkableBase (abstract) — holds List<Link>
-        └── RestObject (interface) — adds properties map, object_name, id, etc.
-              ├── json/JsonObject, json/JsonDocument, …   (Jackson models)
-              └── xml/jaxb/JaxbObject, jaxb/JaxbDocument, … (JAXB models)
+┌─────────────────────────────────────────────────────────────┐
+│ Interfaces (format-agnostic)                                │
+├─────────────────────────────────────────────────────────────┤
+│ Linkable → InlineLinkable → RestObject                      │
+│ Feed<T>, Entry<T>, Inlineable                               │
+└─────────────────────────────────────────────────────────────┘
+         ↓ implemented by (parallel hierarchies)              
+┌──────────────────────────┬──────────────────────────────────┐
+│  JSON (Jackson)          │  XML (JAXB)                      │
+├──────────────────────────┼──────────────────────────────────┤
+│ JsonLinkableBase         │ JaxbAtomLinkableBase             │
+│   ↓                      │   ↓                              │
+│ JsonInlineLinkableBase   │ JaxbObject                       │
+│   ↓                      │ JaxbDocument                     │
+│ JsonObject               │ JaxbFolder                       │
+│ JsonDocument             │ JaxbEntry<T>                     │
+│ JsonFolder               │ JaxbFeed<T>                      │
+│ JsonEntry<T>             │ (uses @XmlAnyElement             │
+│ JsonFeed<T>              │  + DCTMJaxbContext.unmarshal()   │
+│ (uses Jackson            │  for polymorphic content)        │
+│  @JsonIgnoreProperties)  │                                  │
+└──────────────────────────┴──────────────────────────────────┘
 
-plain/PlainRestObject    — used to build request payloads (no serialiser dependency)
-plain/PlainFolderLink
-plain/PlainPreference
-…
+┌──────────────────────────────────────────────────────────────┐
+│ Plain Models (request construction, no binding dependency)   │
+├──────────────────────────────────────────────────────────────┤
+│ plain/PlainRestObject                                        │
+│ plain/PlainFolderLink                                        │
+│ plain/PlainPreference                                        │
+│ …                                                            │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-Specialised types (`Feed<T>`, `Entry<T>`, `HomeDocument`, `Repository`, `FolderLink`, `Lifecycle`, `Comment`, `Preference`, `AuditPolicy`, etc.) each have parallel JAXB and Jackson implementations. The `Feed<T>` generic carries paging metadata and a list of `Entry<T>`, mirroring the Atom feed structure used by the server.
+Specialised types (`HomeDocument`, `Repository`, `FolderLink`, `Lifecycle`, `Comment`, `Preference`, `AuditPolicy`, etc.) each have parallel JAXB and Jackson implementations. The `Feed<T>` generic carries paging metadata and a list of `Entry<T>`, mirroring the Atom feed structure used by the server.
+
+**Key implementation notes:**
+- `JaxbEntry` uses `@XmlAnyElement` with `DCTMJaxbContext.unmarshal()` to handle various inlined types within entries
+- `JsonInlineLinkableBase` provides the base logic for JSON resources that include source URIs and content types
+- Version-specific handling: `JsonType` (7.0) vs `JsonType71` (7.1+) for metadata differences
 
 ---
 
