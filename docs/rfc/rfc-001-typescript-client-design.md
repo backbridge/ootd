@@ -195,7 +195,9 @@ interface Document extends PersistentObject {
 interface Folder extends PersistentObject {
   // Folder-specific properties
   path?: string;
-  is Cabinet extends Folder {
+}
+
+interface Cabinet extends Folder {
   // Cabinet-specific properties
 }
 ```
