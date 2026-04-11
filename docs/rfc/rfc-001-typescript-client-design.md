@@ -382,7 +382,71 @@ const client = new DocumentumClient({
 
 When enabled, the client:
 1. Fetches the CSRF token name/value from the home document on first request
-2. Echoes the token on subsequent mutating requests (POST, PUT, DELETE)
+2. Updates the token from the response headers of **any** request (GET, POST, PUT, DELETE) when present
+3. Echoes the current token on subsequent mutating requests (POST, PUT, DELETE)
+
+The server may rotate the CSRF token in response headers of any request, and the client must track the most recent token value for use in the next mutation.
+
+### 8.2.1. Serialized Request Pattern
+
+Given the async-first nature of TypeScript and the concurrent environment in which the client operates, the **Serialized Request Pattern** ensures CSRF token safety and strict ordering guarantees for all operations, including GET requests.
+
+#### Strict Ordering Across All Operations
+
+The client must enforce **strict sequential ordering** for **all** HTTP requests (GET, POST, PUT, DELETE) through a single request queue. This is necessary because:
+
+1. **GET responses can rotate the CSRF token** — Any response from the server may include a new CSRF token in its headers, and the client must use the latest token for subsequent requests
+2. **No assumptions about token validity** — We cannot assume that older tokens remain valid for any time window; only the most recently received token should be used
+3. **Predictable token state** — Sequential execution ensures that each request uses exactly the token returned by the immediately preceding request
+4. **HATEOAS navigation correctness** — Strict ordering ensures that the state discovered by each request is the foundation for the next request
+
+By serializing all requests, the client eliminates race conditions entirely: the token state is always well-defined and deterministic.
+
+#### Promise-Based Request Queue
+
+All client methods, regardless of HTTP method (GET, POST, PUT, DELETE), must route through a single promise-based queue:
+
+```typescript
+private requestQueue = Promise.resolve();
+
+private async enqueueRequest<T>(operation: () => Promise<T>): Promise<T> {
+  const resultPromise = this.requestQueue.then(async () => {
+    const result = await operation();
+    return result;
+  });
+  
+  this.requestQueue = resultPromise.catch(() => {
+    // Continue queue even if this request fails
+    return undefined;
+  });
+  
+  return resultPromise;
+}
+```
+
+Every client method wraps its HTTP call with `enqueueRequest`:
+
+```typescript
+async getCabinets(options?: FeedOptions): Promise<HttpResponse<Feed<Cabinet>>> {
+  return this.enqueueRequest(() => this.http.get<Feed<Cabinet>>(...));
+}
+
+async createDocument(parent: Linkable, doc: Partial<Document>): Promise<HttpResponse<Document>> {
+  return this.enqueueRequest(() => this.http.post<Document>(...));
+}
+```
+
+A promise-based queue is preferred over a standard mutex for several reasons:
+
+1. **Idiomatic to TypeScript/JavaScript** — Leverages native promise chaining rather than introducing synchronization primitives
+2. **Strict ordering guarantees** — The order of initiating requests in code matches the order of execution, which is critical for HATEOAS where subsequent requests often depend on state or tokens discovered by previous ones
+3. **Correct CSRF token management** — Ensures each request uses exactly the token returned by the previous request, with no assumptions about token expiration windows
+4. **Lightweight** — No additional dependencies or complex lock management
+5. **Error resilience** — A failed request does not permanently block the queue; subsequent requests can proceed with the current token
+6. **Transparent to callers** — Methods return normal promises; the caller's async/await code remains unchanged
+7. **Browser and Node.js compatible** — Works identically across both runtime environments supported by the dual HTTP client architecture
+
+The request queue ensures that even if application code initiates multiple operations concurrently, they execute sequentially with proper CSRF token management and consistent state, while still allowing callers to `await` each promise independently.
 
 ---
 
