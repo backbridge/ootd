@@ -224,6 +224,10 @@ interface DocumentumClient {
   getHomeDocument(): Promise<HttpResponse<HomeDocument>>;
   getProductInfo(): Promise<HttpResponse<ProductInfo>>;
   getRepositories(): Promise<HttpResponse<Feed<Repository>>>;
+
+  // Navigation
+  followLink<T extends Linkable>(resource: Linkable, rel: string): Promise<HttpResponse<T>>;
+  followLinks<T extends Linkable>(resource: Linkable, rel: string): Promise<HttpResponse<Feed<T>>>;
 }
 ```
 
@@ -308,18 +312,14 @@ Following the HATEOAS principle, resources carry their own navigation capabiliti
 ```typescript
 // Instead of client.getCabinet(id), use:
 const home = await client.getHomeDocument();
-const repos = await followLinks(home, 'repositories');
-const repo = await followLink(repos, 'self');
-const cabinets = await followLinks(repo, 'cabinets');
+const repos = await client.followLinks(home, 'repositories');
+const repo = await client.followLink(repos, 'self');
+const cabinets = await client.followLinks(repo, 'cabinets');
 const cabinet = cabinets.entries[0];
-const docs = await followLinks(cabinet, 'documents');
-
-// Helper to follow link relations
-function followLinks<T extends Linkable>(resource: T, rel: string): Promise<HttpResponse<Feed<any>>>;
-function followLink<T extends Linkable>(resource: T, rel: string): Promise<HttpResponse<T>>;
+const docs = await client.followLinks(cabinet, 'documents');
 ```
 
-This mirrors the .NET client's self-navigating model objects, but operates at the client level to maintain the ADR-001 principle of no abstraction overhead.
+This mirrors the .NET client's self-navigating model objects, but operates at the client level to maintain the ADR-001 principle of no abstraction overhead. By binding navigation to the client, we ensure that every link traversal benefits from the client's internal request serialization and CSRF management.
 
 ---
 
@@ -370,7 +370,7 @@ The client adds the `Authorization: Basic <base64>` header to every request.
 
 ### 8.2. CSRF Token Support (REST Services v7.2+)
 
-The Java client implements the CSRF client token protocol. This client should mirror that support:
+The Java client implements a dynamic CSRF client token protocol. This client should mirror that support:
 
 ```typescript
 const client = new DocumentumClient({
@@ -380,14 +380,21 @@ const client = new DocumentumClient({
 });
 ```
 
-When enabled, the client:
-1. Fetches the CSRF token name/value from the home document on first request
-2. Updates the token from the response headers of **any** request (GET, POST, PUT, DELETE) when present
-3. Echoes the current token on subsequent mutating requests (POST, PUT, DELETE)
+When enabled, the client monitors specific response headers to discover and track CSRF tokens:
 
-The server may rotate the CSRF token in response headers of any request, and the client must track the most recent token value for use in the next mutation.
+1.  **`DOCUMENTUM-CSRF-HEADER-NAME`**: This response header contains the *name* of the header that the client must use to send the CSRF token in subsequent requests (e.g., `X-CSRF-Token`).
+2.  **`DOCUMENTUM-CLIENT-TOKEN`**: This token may be sent by the server in a `Set-Cookie` header. If present, the client must extract it and send it back as a custom request header (not just a cookie) in subsequent requests.
+
+The client's lifecycle for CSRF management is:
+1. **Discovery**: On every response, check for `DOCUMENTUM-CSRF-HEADER-NAME` and `DOCUMENTUM-CLIENT-TOKEN`.
+2. **Persistence**: Update the internal token state immediately upon receiving new values from any response (GET, POST, PUT, DELETE).
+3. **Echo**: Include the current CSRF token (using the discovered header name) and the client token in the headers of subsequent mutating requests.
+
+The server may rotate these tokens at any time, requiring the client to track the most recent values.
 
 ### 8.2.1. Serialized Request Pattern
+
+The **Serialized Request Pattern** described below applies only when CSRF protection is enabled (`enableCsrfProtection: true`). If CSRF protection is disabled, requests can execute concurrently without serialization.
 
 Given the async-first nature of TypeScript and the concurrent environment in which the client operates, the **Serialized Request Pattern** ensures CSRF token safety and strict ordering guarantees for all operations, including GET requests.
 

@@ -209,7 +209,7 @@ HTTP error responses are parsed into a typed `RestError` model (with JAXB and Ja
 
 ## Authentication
 
-Basic HTTP Authentication is used (Base64-encoded `username:password` in the `Authorization` header on every request). The abstract client also implements the optional CSRF client token protocol introduced in REST Services 7.2, where the server issues a token name and value that the client must echo on subsequent mutating requests.
+Basic HTTP Authentication is used (Base64-encoded `username:password` in the `Authorization` header on every request). The abstract client also implements the optional CSRF client token protocol introduced in REST Services 7.2, where the server issues a token name and value that the client must echo on subsequent mutating requests. See [CSRF and Client Token Behavior](./csrf-token-behavior.md) for a detailed breakdown of this protocol.
 
 ---
 
