@@ -65,6 +65,11 @@ export class DocumentumClient {
 
   private readonly csrfHooks: CsrfHooks;
 
+  /**
+   * Creates a new DocumentumClient.
+   *
+   * @param config - Configuration for connecting to a Documentum REST Services instance.
+   */
   constructor(config: DocumentumClientConfig) {
     this.config = config;
     this.baseUrl = config.baseUrl.replace(/\/+$/, '');
@@ -176,6 +181,17 @@ export class DocumentumClient {
 
   // ─── Navigation Helpers ──────────────────────────────────
 
+  /**
+   * Follows a single link relation from a resource.
+   * Locates the link with the matching `rel` in the resource's links array
+   * and executes a GET request to the resolved href.
+   *
+   * @typeParam T - The expected response body type.
+   * @param resource - The resource containing hypermedia links.
+   * @param rel - The link relation name to follow (e.g. `'self'`, `'http://identifiers.emc.com/linkrel/primary-content'`).
+   * @returns A promise resolving to the HTTP response containing the target resource.
+   * @throws If the link relation is not found on the resource.
+   */
   followLink<T extends Linkable>(
     resource: Linkable,
     rel: string,
@@ -187,6 +203,15 @@ export class DocumentumClient {
     return this.enqueueRequest(() => this.httpClient.get<T>(href));
   }
 
+  /**
+   * Follows a link relation that returns a feed (collection) of resources.
+   *
+   * @typeParam T - The expected entry content type in the feed.
+   * @param resource - The resource containing hypermedia links.
+   * @param rel - The link relation name to follow.
+   * @returns A promise resolving to the HTTP response containing a feed of resources.
+   * @throws If the link relation is not found on the resource.
+   */
   followLinks<T extends Linkable>(
     resource: Linkable,
     rel: string,
@@ -200,6 +225,15 @@ export class DocumentumClient {
 
   // ─── Paging Helpers ──────────────────────────────────────
 
+  /**
+   * Navigates to the next page of a paginated feed.
+   * Follows the `'next'` link relation on the feed.
+   *
+   * @typeParam T - The entry content type in the feed.
+   * @param feed - The current feed/collection resource.
+   * @returns A promise resolving to the HTTP response containing the next page feed.
+   * @throws If the `'next'` link relation is not found on the feed.
+   */
   nextPage<T extends Linkable>(
     feed: Feed<T>,
   ): Promise<HttpResponse<Feed<T>>> {
@@ -210,6 +244,15 @@ export class DocumentumClient {
     return this.enqueueRequest(() => this.httpClient.get<Feed<T>>(href));
   }
 
+  /**
+   * Navigates to the previous page of a paginated feed.
+   * Follows the `'previous'` link relation on the feed.
+   *
+   * @typeParam T - The entry content type in the feed.
+   * @param feed - The current feed/collection resource.
+   * @returns A promise resolving to the HTTP response containing the previous page feed.
+   * @throws If the `'previous'` link relation is not found on the feed.
+   */
   previousPage<T extends Linkable>(
     feed: Feed<T>,
   ): Promise<HttpResponse<Feed<T>>> {
@@ -220,6 +263,15 @@ export class DocumentumClient {
     return this.enqueueRequest(() => this.httpClient.get<Feed<T>>(href));
   }
 
+  /**
+   * Navigates to the first page of a paginated feed.
+   * Follows the `'first'` link relation on the feed.
+   *
+   * @typeParam T - The entry content type in the feed.
+   * @param feed - The current feed/collection resource.
+   * @returns A promise resolving to the HTTP response containing the first page feed.
+   * @throws If the `'first'` link relation is not found on the feed.
+   */
   firstPage<T extends Linkable>(
     feed: Feed<T>,
   ): Promise<HttpResponse<Feed<T>>> {
@@ -230,6 +282,15 @@ export class DocumentumClient {
     return this.enqueueRequest(() => this.httpClient.get<Feed<T>>(href));
   }
 
+  /**
+   * Navigates to the last page of a paginated feed.
+   * Follows the `'last'` link relation on the feed.
+   *
+   * @typeParam T - The entry content type in the feed.
+   * @param feed - The current feed/collection resource.
+   * @returns A promise resolving to the HTTP response containing the last page feed.
+   * @throws If the `'last'` link relation is not found on the feed.
+   */
   lastPage<T extends Linkable>(
     feed: Feed<T>,
   ): Promise<HttpResponse<Feed<T>>> {
@@ -242,6 +303,14 @@ export class DocumentumClient {
 
   // ─── Content Retrieval ───────────────────────────────────
 
+  /**
+   * Retrieves the feed of content renditions for a document.
+   * Follows the `'contents'` link relation on the resource.
+   *
+   * @param resource - The document or linkable resource.
+   * @returns A promise resolving to the HTTP response containing the contents feed.
+   * @throws If the `'contents'` link relation is not found on the resource.
+   */
   getContents(
     resource: Linkable,
   ): Promise<HttpResponse<ContentsFeed>> {
@@ -256,6 +325,17 @@ export class DocumentumClient {
     });
   }
 
+  /**
+   * Downloads the primary binary content of a document.
+   * Uses a two-step process:
+   * 1. GET the `primary-content` link (with `?media-url-policy=LOCAL`) to obtain content metadata.
+   * 2. GET the `content-media` link to retrieve the actual binary content.
+   *
+   * @param resource - The document or linkable resource.
+   * @param options - Optional download configuration (media URL policy and response type).
+   * @returns A promise resolving to the HTTP response containing the binary content as a Blob.
+   * @throws If required link relations are not found.
+   */
   async getPrimaryContent(
     resource: Linkable,
     options?: ContentDownloadOptions,
@@ -328,6 +408,19 @@ export class DocumentumClient {
 
   // ─── Content Upload ──────────────────────────────────────
 
+  /**
+   * Uploads binary content as a new rendition to a document.
+   * Sends a multipart/form-data POST request to the `'contents'` link
+   * with a JSON metadata part and a binary content part.
+   * The Documentum format is automatically derived from the content type if not specified.
+   *
+   * @param resource - The document or linkable resource.
+   * @param content - The binary content to upload.
+   * @param contentType - The MIME type of the content.
+   * @param options - Optional upload configuration (format override).
+   * @returns A promise resolving to the HTTP response containing the created Content resource.
+   * @throws If the `'contents'` link relation is not found on the resource.
+   */
   uploadContent(
     resource: Linkable,
     content: Blob | Buffer | Uint8Array,
@@ -369,6 +462,14 @@ export class DocumentumClient {
 
   // ─── Version Management ──────────────────────────────────
 
+  /**
+   * Checks out a document for editing.
+   * Sends a PUT request to the `'checkout'` link relation.
+   *
+   * @param resource - The document or linkable resource.
+   * @returns A promise resolving to the HTTP response containing the checked-out document.
+   * @throws If the `'checkout'` link relation is not found on the resource.
+   */
   checkout(
     resource: Linkable,
   ): Promise<HttpResponse<Document>> {
@@ -383,6 +484,14 @@ export class DocumentumClient {
     });
   }
 
+  /**
+   * Cancels a pending checkout, discarding the working copy.
+   * Sends a DELETE request to the `'cancel-checkout'` link relation.
+   *
+   * @param resource - The document or linkable resource.
+   * @returns A promise resolving to the HTTP response (typically 204 No Content).
+   * @throws If the `'cancel-checkout'` link relation is not found on the resource.
+   */
   cancelCheckout(
     resource: Linkable,
   ): Promise<HttpResponse<void>> {
@@ -399,6 +508,18 @@ export class DocumentumClient {
     });
   }
 
+  /**
+   * Checks in a document as the next major version.
+   * Supports both metadata-only check-ins (JSON body) and check-ins with new content (multipart).
+   *
+   * @param resource - The document or linkable resource.
+   * @param properties - Optional property updates to apply during check-in.
+   * @param content - Optional new binary content for the check-in.
+   * @param contentType - The MIME type of the content (required if content is provided).
+   * @param options - Optional check-in configuration (format, version type).
+   * @returns A promise resolving to the HTTP response containing the updated document.
+   * @throws If the check-in link relation is not found on the resource.
+   */
   checkinNextMajor(
     resource: Linkable,
     properties?: Record<string, unknown>,
@@ -416,6 +537,18 @@ export class DocumentumClient {
     );
   }
 
+  /**
+   * Checks in a document as the next minor version.
+   * Supports both metadata-only check-ins (JSON body) and check-ins with new content (multipart).
+   *
+   * @param resource - The document or linkable resource.
+   * @param properties - Optional property updates to apply during check-in.
+   * @param content - Optional new binary content for the check-in.
+   * @param contentType - The MIME type of the content (required if content is provided).
+   * @param options - Optional check-in configuration (format, version type).
+   * @returns A promise resolving to the HTTP response containing the updated document.
+   * @throws If the check-in link relation is not found on the resource.
+   */
   checkinNextMinor(
     resource: Linkable,
     properties?: Record<string, unknown>,
@@ -484,6 +617,14 @@ export class DocumentumClient {
 
   // ─── Deletion ────────────────────────────────────────────
 
+  /**
+   * Deletes a resource from the repository.
+   * Attempts to DELETE via the `'delete'` link relation, falling back to `'self'` or `'edit'` if not found.
+   *
+   * @param resource - The resource to delete.
+   * @returns A promise resolving to the HTTP response (typically 204 No Content).
+   * @throws If no `'delete'`, `'self'`, or `'edit'` link relation is found on the resource.
+   */
   delete(
     resource: Linkable,
   ): Promise<HttpResponse<void>> {
@@ -508,6 +649,17 @@ export class DocumentumClient {
 
   // ─── Content Update (Edit Media) ─────────────────────────
 
+  /**
+   * Replaces the binary content of a document via the `'edit-media'` link.
+   * Sends a multipart/form-data PUT request to update the primary content rendition.
+   *
+   * @param resource - The document or linkable resource.
+   * @param content - The new binary content.
+   * @param contentType - The MIME type of the content.
+   * @param options - Optional update configuration (format override).
+   * @returns A promise resolving to the HTTP response containing the updated Content resource.
+   * @throws If the `'edit-media'` link relation is not found on the resource.
+   */
   updateContent(
     resource: Linkable,
     content: Blob | Buffer | Uint8Array,

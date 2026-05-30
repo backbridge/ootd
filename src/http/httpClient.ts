@@ -5,16 +5,30 @@ import { CSRF_HEADER_CONSTANTS } from '../types/csrf.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
 
+/**
+ * Options for configuring an HTTP request through the HttpClient.
+ */
 export interface HttpClientOptions {
+  /** Additional HTTP headers to include in the request. */
   headers?: Record<string, string>;
+  /** Query parameters appended to the request URL. */
   queryParams?: Record<string, string | number | boolean | undefined>;
+  /** Request body. Automatically serialized to JSON for objects unless it is a FormData, Blob, ArrayBuffer, ReadableStream, or Buffer. */
   body?: unknown;
+  /** Expected response type. Defaults to `'json'`. */
   responseType?: 'json' | 'arraybuffer' | 'blob' | 'stream' | 'text';
+  /** Optional AbortSignal for cancelling the request. */
   signal?: AbortSignal;
 }
 
+/**
+ * Hooks for CSRF token lifecycle management.
+ * The HttpClient calls these before sending a request and after receiving a response.
+ */
 export interface CsrfHooks {
+  /** Called before each request to attach current CSRF tokens to request headers. */
   attachCsrfTokens: (headers: Record<string, string>) => void;
+  /** Called after each response to extract and update CSRF tokens from response headers. */
   extractCsrfTokens: (headers: Headers | Record<string, string>) => void;
 }
 
@@ -67,6 +81,12 @@ export class HttpClient {
   private readonly credentials?: Credentials;
   private readonly csrfHooks?: CsrfHooks;
 
+  /**
+   * Creates a new HttpClient.
+   *
+   * @param baseUrl - Base URL for all relative request paths.
+   * @param options - Optional configuration for credentials, HTTP agent, and CSRF hooks.
+   */
   constructor(
     baseUrl: string,
     options?: {
@@ -105,6 +125,10 @@ export class HttpClient {
     return this.axiosInstance;
   }
 
+  /**
+   * Whether the HttpClient is using axios (true) or native fetch (false).
+   * Determined at runtime by detecting axios availability.
+   */
   get useAxios(): boolean {
     if (!this.axiosChecked) {
       this.getAxios();
@@ -148,6 +172,14 @@ export class HttpClient {
     this.csrfHooks.extractCsrfTokens(headers);
   }
 
+  /**
+   * Sends an HTTP request using the detected HTTP agent (axios or fetch).
+   *
+   * @param method - The HTTP method (GET, POST, PUT, DELETE).
+   * @param path - The request path (absolute URL or relative to baseUrl).
+   * @param options - Optional request configuration.
+   * @returns A promise resolving to the native HTTP response (AxiosResponse or Response).
+   */
   async request<T>(
     method: HttpMethod,
     path: string,
@@ -257,22 +289,59 @@ export class HttpClient {
     return response;
   }
 
+  /**
+   * Sends a GET request.
+   *
+   * @param path - The request path (absolute URL or relative to baseUrl).
+   * @param options - Optional request configuration.
+   * @returns A promise resolving to the native HTTP response.
+   */
   async get<T>(path: string, options?: HttpClientOptions): Promise<HttpResponse<T>> {
     return this.request<T>('GET', path, options);
   }
 
+  /**
+   * Sends a POST request.
+   *
+   * @param path - The request path (absolute URL or relative to baseUrl).
+   * @param body - The request body to send.
+   * @param options - Optional request configuration.
+   * @returns A promise resolving to the native HTTP response.
+   */
   async post<T>(path: string, body?: unknown, options?: HttpClientOptions): Promise<HttpResponse<T>> {
     return this.request<T>('POST', path, { ...options, body });
   }
 
+  /**
+   * Sends a PUT request.
+   *
+   * @param path - The request path (absolute URL or relative to baseUrl).
+   * @param body - The request body to send.
+   * @param options - Optional request configuration.
+   * @returns A promise resolving to the native HTTP response.
+   */
   async put<T>(path: string, body?: unknown, options?: HttpClientOptions): Promise<HttpResponse<T>> {
     return this.request<T>('PUT', path, { ...options, body });
   }
 
+  /**
+   * Sends a DELETE request.
+   *
+   * @param path - The request path (absolute URL or relative to baseUrl).
+   * @param options - Optional request configuration.
+   * @returns A promise resolving to the native HTTP response.
+   */
   async delete<T>(path: string, options?: HttpClientOptions): Promise<HttpResponse<T>> {
     return this.request<T>('DELETE', path, options);
   }
 
+  /**
+   * Parses a `Set-Cookie` header to extract the `DOCUMENTUM-CLIENT-TOKEN` cookie value.
+   * Follows RFC 6265 cookie parsing rules.
+   *
+   * @param setCookieHeader - The raw `Set-Cookie` header value.
+   * @returns The client token value if found, otherwise undefined.
+   */
   static parseSetCookieForClientToken(setCookieHeader: string): string | undefined {
     const cookies = parseCookieHeader(setCookieHeader);
     return cookies.get(CSRF_HEADER_CONSTANTS.CLIENT_TOKEN_COOKIE);
