@@ -151,19 +151,6 @@ export class DocumentumClient {
     return resultPromise;
   }
 
-  private extractResponseData<T>(response: HttpResponse<T>): T | null {
-    if (isAxiosResponse(response)) {
-      return response.data as T;
-    }
-    if (response.ok && response.status !== 204) {
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('json')) {
-        return response.json() as unknown as T;
-      }
-    }
-    return null;
-  }
-
   private async extractBodyAsBlob(
     response: HttpResponse<unknown>,
   ): Promise<Blob> {
